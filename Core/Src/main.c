@@ -42,6 +42,10 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
+SPI_HandleTypeDef hspi1;
+
+TIM_HandleTypeDef htim2;
+
 /* USER CODE BEGIN PV */
 static const uint8_t g_number_table[] = {
     0x3F, /* 0 */
@@ -64,15 +68,18 @@ static const uint8_t g_number_table[] = {
 
 uint32_t display_timer = 0;
 
-static uint8_t i2c_tx_buffer[11];
+static uint8_t i2c_tx[11];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
+static void MX_SPI1_Init(void);
+static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
-void Display_Value(int sensor_grams);
+void Display_Value(float sensor_grams);
+void Display_Show_Scale_ID(uint8_t scale_num);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -110,6 +117,8 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_I2C1_Init();
+  MX_SPI1_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
   // Turn on system oscillator
   uint8_t osc_cmd = 0x21;
@@ -124,6 +133,9 @@ int main(void)
   // Set brightness to medium (0xEF for max, 0xE7 for mid)
   uint8_t bright_cmd = 0xE7;
   HAL_I2C_Master_Transmit(&hi2c1, VK16K33_ADDR, &bright_cmd, 1, 100);
+
+  // Timer
+  HAL_TIM_Base_Start_IT(&htim2);
 //
 //  // 4. Test pattern: Show '8' on all 4 digits and turn colon on
 //  //    Register address: 0x00
@@ -147,50 +159,9 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-//      // Break the count down into individual base-10 digits
-//      uint8_t d0 = (count / 1000) % 10;
-//      uint8_t d1 = (count / 100)  % 10;
-//      uint8_t d2 = (count / 10)   % 10;
-//      uint8_t d3 = count % 10;
-//
-//      // Toggle colon on even counts (0x02 = ON, 0x00 = OFF)
-//      uint8_t colon = (count % 2 == 0) ? 0x02 : 0x00;
-//
-//      // Build the 11-byte transaction:
-//      // Byte 0: Register pointer (0x00)
-//      // Bytes 1-2: Digit 0 (lower, upper)
-//      // Bytes 3-4: Digit 1 (lower, upper)
-//      // Bytes 5-6: Colon   (lower, upper)
-//      // Bytes 7-8: Digit 2 (lower, upper)
-//      // Bytes 9-10: Digit 3 (lower, upper)
-//      uint8_t frame[11] = {
-//          0x00,
-//          g_number_table[d0], 0x00,
-//          g_number_table[d1], 0x00,
-//          colon,              0x00,
-//          g_number_table[d2], 0x00,
-//          g_number_table[d3], 0x00
-//      };
-//
-//      HAL_I2C_Master_Transmit(&hi2c1, VK16K33_ADDR, frame, sizeof(frame), 100);
-//
-//      count++;
-//      if (count > 9999) {
-//          count = 0;
-//      }
-//
-//      HAL_Delay(1000); // Wait 2 seconds before next update
-//    }
-
-	uint32_t current_time = HAL_GetTick();
-	// Update the display every 100ms
-	if (current_time - display_timer >= 100) {
-		display_timer = current_time;
-
-		// Simulate sensor input - replace this with your actual sensor reading variable
-		int simulated_sensor_input = 1236;
-		Display_Value(simulated_sensor_input);
-	}
+    __WFI();
+  }
+  /* USER CODE END 3 */
 }
 
 /**
@@ -269,19 +240,114 @@ static void MX_I2C1_Init(void)
 }
 
 /**
+  * @brief SPI1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI1_Init(void)
+{
+
+  /* USER CODE BEGIN SPI1_Init 0 */
+
+  /* USER CODE END SPI1_Init 0 */
+
+  /* USER CODE BEGIN SPI1_Init 1 */
+
+  /* USER CODE END SPI1_Init 1 */
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_1LINE;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI1_Init 2 */
+
+  /* USER CODE END SPI1_Init 2 */
+
+}
+
+/**
+  * @brief TIM2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM2_Init(void)
+{
+
+  /* USER CODE BEGIN TIM2_Init 0 */
+
+  /* USER CODE END TIM2_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM2_Init 1 */
+
+  /* USER CODE END TIM2_Init 1 */
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 0;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 4294967295;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM2_Init 2 */
+
+  /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
   */
 static void MX_GPIO_Init(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
   /* USER CODE BEGIN MX_GPIO_Init_1 */
 
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_RESET);
+
+  /*Configure GPIO pins : PC6 PC7 */
+  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -289,8 +355,24 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void Display_Value(int sensor_grams) { //0-180 as a float (only have display of 4 so show tenth place as well)
+void Display_Show_Scale_ID(uint8_t scale_num) {
     if (HAL_I2C_GetState(&hi2c1) != HAL_I2C_STATE_READY) return;
+
+    i2c_tx[0] = 0x00;
+    i2c_tx[1] = 0x6D; i2c_tx[2] = 0x00; // 'S'
+    i2c_tx[3] = 0x39; i2c_tx[4] = 0x00; // 'C'
+    i2c_tx[5] = 0x02; i2c_tx[6] = 0x00; // Colon ON
+    i2c_tx[7] = g_number_table[(scale_num / 10) % 10]; i2c_tx[8] = 0x00;
+    i2c_tx[9] = g_number_table[scale_num % 10];        i2c_tx[10] = 0x00;
+
+    HAL_I2C_Master_Transmit_IT(&hi2c1, VK16K33_ADDR, i2c_tx, 11);
+}
+
+void Display_Value(float sensor_grams) {
+    // Abort if I2C is still busy sending the last message
+    if (HAL_I2C_GetState(&hi2c1) != HAL_I2C_STATE_READY) return;
+
+    int display_val = (int)(sensor_grams * 10.0f);
 
     if (display_val < 0) display_val = 0;
     if (display_val > 9999) display_val = 9999;
@@ -300,31 +382,22 @@ void Display_Value(int sensor_grams) { //0-180 as a float (only have display of 
     uint8_t d2 = (display_val / 10)   % 10;
     uint8_t d3 = display_val % 10;
 
-    // Static frame means interrupt I2C HAL can run without  having data overwritten
-    static uint8_t frame[11];
+    i2c_tx[0] = 0x00;
+    i2c_tx[1] = g_number_table[d0]; i2c_tx[2] = 0x00;
+    i2c_tx[3] = g_number_table[d1]; i2c_tx[4] = 0x00;
+    i2c_tx[5] = 0x00;               i2c_tx[6] = 0x00; // Colon OFF
+    i2c_tx[7] = g_number_table[d2] | 0x80; i2c_tx[8] = 0x00; // Decimal ON
+    i2c_tx[9] = g_number_table[d3]; i2c_tx[10] = 0x00;
 
-    frame[0] = 0x00;
-    frame[1] = g_number_table[d0]; frame[2] = 0x00;
-    frame[3] = g_number_table[d1]; frame[4] = 0x00;
-    frame[5] = 0x00;               frame[6] = 0x00;
-    frame[7] = g_number_table[d2] | 0x80; frame[8] = 0x00;
-    frame[9] = g_number_table[d3]; frame[10] = 0x00;
-
-    HAL_I2C_Master_Transmit_IT(&hi2c1, VK16K33_ADDR, frame, 11);
+    HAL_I2C_Master_Transmit_IT(&hi2c1, VK16K33_ADDR, i2c_tx, 11);
 }
 
-void Display_Show_Scale_ID(uint8_t scale_num) {
-    if (HAL_I2C_GetState(&hi2c1) != HAL_I2C_STATE_READY) return;
-
-    i2c_tx_buffer[0] = 0x00;
-    i2c_tx_buffer[1] = 0x6D; i2c_tx_buffer[2] = 0x00; // 'S'
-    i2c_tx_buffer[3] = 0x39; i2c_tx_buffer[4] = 0x00; // 'C'
-    i2c_tx_buffer[5] = 0x02; i2c_tx_buffer[6] = 0x00; // Colon ON
-    i2c_tx_buffer[7] = g_number_table[(scale_num / 10) % 10]; i2c_tx_buffer[8] = 0x00;
-    i2c_tx_buffer[9] = g_number_table[scale_num % 10];        i2c_tx_buffer[10] = 0x00;
-
-    HAL_I2C_Master_Transmit_IT(&hi2c1, VK16K33_ADDR, i2c_tx_buffer, 11);
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+	float sensor_grams = 152.4f;
+	Display_Value(sensor_grams);
 }
+
 /* USER CODE END 4 */
 
 /**

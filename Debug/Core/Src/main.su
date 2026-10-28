@@ -1,5 +1,7 @@
-../Core/Src/main.c:73:5:main	40	static
-../Core/Src/main.c:181:6:SystemClock_Config	88	static
-../Core/Src/main.c:223:13:MX_I2C1_Init	8	static
-../Core/Src/main.c:257:13:MX_GPIO_Init	16	static
-../Core/Src/main.c:280:6:Error_Handler	4	static,ignoring_inline_asm
+../Core/Src/main.c:88:5:main	32	static
+../Core/Src/main.c:202:6:SystemClock_Config	88	static
+../Core/Src/main.c:244:13:MX_I2C1_Init	8	static
+../Core/Src/main.c:278:13:MX_GPIO_Init	16	static
+../Core/Src/main.c:294:6:Display_Show_Scale_ID	16	static
+../Core/Src/main.c:307:6:Display_Value	24	static
+../Core/Src/main.c:338:6:Error_Handler	4	static,ignoring_inline_asm

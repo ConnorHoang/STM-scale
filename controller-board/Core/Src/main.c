@@ -49,6 +49,7 @@ I2C_HandleTypeDef hi2c1;
 SPI_HandleTypeDef hspi1;
 
 TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim3;
 
 /* USER CODE BEGIN PV */
 static const uint8_t g_number_table[] = {
@@ -104,6 +105,7 @@ static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 void Display_Value(float sensor_grams);
 void Display_Show_Scale_ID(uint8_t scale_num);
@@ -147,6 +149,7 @@ int main(void)
   MX_I2C1_Init();
   MX_SPI1_Init();
   MX_TIM2_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
   // Turn on system oscillator
   uint8_t osc_cmd = 0x21;
@@ -162,8 +165,9 @@ int main(void)
   uint8_t bright_cmd = 0xE7;
   HAL_I2C_Master_Transmit(&hi2c1, VK16K33_ADDR, &bright_cmd, 1, 100);
 
-  // Timer
+  // Timers
   HAL_TIM_Base_Start_IT(&htim2);
+  HAL_TIM_Base_Start_IT(&htim3);
 //
 //  // 4. Test pattern: Show '8' on all 4 digits and turn colon on
 //  //    Register address: 0x00
@@ -360,6 +364,51 @@ static void MX_TIM2_Init(void)
 }
 
 /**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 0;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 65535;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -410,15 +459,21 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 void Display_Show_Scale_ID(uint8_t scale_num) {
     if (HAL_I2C_GetState(&hi2c1) != HAL_I2C_STATE_READY) return;
+	HAL_TIM_Base_Stop_IT(&htim3);
 
     i2c_tx[0] = 0x00;
-    i2c_tx[1] = 0x6D; i2c_tx[2] = 0x00; // 'S'
-    i2c_tx[3] = 0x39; i2c_tx[4] = 0x00; // 'C'
-    i2c_tx[5] = 0x02; i2c_tx[6] = 0x00; // Colon ON
+    i2c_tx[1] = 0x6D;
+    i2c_tx[2] = 0x00; // 'S'
+    i2c_tx[3] = 0x39;
+    i2c_tx[4] = 0x00; // 'C'
+    i2c_tx[5] = 0x02;
+    i2c_tx[6] = 0x00; // Colon ON
     i2c_tx[7] = g_number_table[(scale_num / 10) % 10]; i2c_tx[8] = 0x00;
     i2c_tx[9] = g_number_table[scale_num % 10];        i2c_tx[10] = 0x00;
 
     HAL_I2C_Master_Transmit_IT(&hi2c1, VK16K33_ADDR, i2c_tx, 11);
+	// Add code here to start TIM3 to start polling and passing values to Display_Value
+	HAL_TIM_Base_Start_IT(&htim3);
 }
 
 void Display_Value(float sensor_grams) {
@@ -436,11 +491,15 @@ void Display_Value(float sensor_grams) {
     uint8_t d3 = display_val % 10;
 
     i2c_tx[0] = 0x00;
-    i2c_tx[1] = g_number_table[d0]; i2c_tx[2] = 0x00;
-    i2c_tx[3] = g_number_table[d1]; i2c_tx[4] = 0x00;
-    i2c_tx[5] = 0x00;               i2c_tx[6] = 0x00; // Colon OFF
+    i2c_tx[1] = g_number_table[d0];
+    i2c_tx[2] = 0x00;
+    i2c_tx[3] = g_number_table[d1];
+    i2c_tx[4] = 0x00;
+    i2c_tx[5] = 0x00;
+    i2c_tx[6] = 0x00; // Colon OFF
     i2c_tx[7] = g_number_table[d2] | 0x80; i2c_tx[8] = 0x00; // Decimal ON
-    i2c_tx[9] = g_number_table[d3]; i2c_tx[10] = 0x00;
+    i2c_tx[9] = g_number_table[d3];
+    i2c_tx[10] = 0x00;
 
     HAL_I2C_Master_Transmit_IT(&hi2c1, VK16K33_ADDR, i2c_tx, 11);
 }
@@ -475,13 +534,13 @@ void SPI_Read_Scale(uint8_t idx) {
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-	if (htim->Instance != TIM2) return;
-
-	// only raise a flag, the SPI read happens in the main loop
-	poll_due = 1;
-
-	float sensor_grams = 152.4f;
-	Display_Value(sensor_grams);
+	if (htim->Instance == TIM2) {
+		// only raise a flag, the SPI read happens in the main loop
+		poll_due = 1;
+	}
+	else if (htim->Instance == TIM3) {
+		Display_Value(scales[active_scale].mass);
+	}
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
@@ -489,8 +548,10 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	// switch bounce just re-sets the same value, harmless
 	if (GPIO_Pin == SW1_Pin) {
 		active_scale = 0;
+		Display_Show_Scale_ID(0);
 	} else if (GPIO_Pin == SW2_Pin) {
 		active_scale = 1;
+		Display_Show_Scale_ID(1);
 	}
 }
 

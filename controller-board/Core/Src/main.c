@@ -74,7 +74,7 @@ uint32_t display_timer = 0;
 
 static uint8_t i2c_tx[11];
 
-// latest reading from each sensor board, written by SPI_Read_Scale()
+// latest reading from each sensor board which is  written by SPI_Read_Scale()
 typedef struct {
 	int16_t  mass;			// tared, calibrated weight
 	uint16_t adc_raw;		// raw adc average
@@ -477,7 +477,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if (htim->Instance != TIM2) return;
 
-	// only raise a flag, the SPI read happens in the main loop
 	poll_due = 1;
 
 	float sensor_grams = 152.4f;
@@ -486,7 +485,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-	// switch bounce just re-sets the same value, harmless
+
 	if (GPIO_Pin == SW1_Pin) {
 		active_scale = 0;
 	} else if (GPIO_Pin == SW2_Pin) {

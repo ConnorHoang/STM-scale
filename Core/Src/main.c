@@ -32,6 +32,10 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define VK16K33_ADDR (0x70 << 1)
+
+#define SCALE_COUNT      2
+#define SPI_FRAME_SIZE   10	
+#define SPI_FRAME_SYNC   0xA5
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -69,6 +73,29 @@ static const uint8_t g_number_table[] = {
 uint32_t display_timer = 0;
 
 static uint8_t i2c_tx[11];
+
+// latest reading from each sensor board, written by SPI_Read_Scale()
+typedef struct {
+	int16_t  mass;			// tared, calibrated weight
+	uint16_t adc_raw;		// raw adc average
+	uint16_t tare;			// raw adc value at last tare
+	uint8_t  seq;			// slave sample counter
+	uint8_t  flags;			// bit 0: tare applied
+	uint8_t  valid;			// last read passed sync + checksum
+} scale_reading_t;
+
+scale_reading_t scales[SCALE_COUNT];
+
+static const struct {
+	GPIO_TypeDef *port;
+	uint16_t pin;
+} scale_cs[SCALE_COUNT] = {
+	{ SPI1_CS_A_GPIO_Port, SPI1_CS_A_Pin },
+	{ SPI1_CS_B_GPIO_Port, SPI1_CS_B_Pin },
+};
+
+volatile uint8_t active_scale = 0;		// state of the board shown [0 = a, 1 = b]
+volatile uint8_t poll_due = 0;			// set by TIM2 at 100 Hz
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -80,6 +107,7 @@ static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 void Display_Value(float sensor_grams);
 void Display_Show_Scale_ID(uint8_t scale_num);
+void SPI_Read_Scale(uint8_t idx);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -159,6 +187,15 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	if (poll_due) {
+		poll_due = 0;
+		for (uint8_t i = 0; i < SCALE_COUNT; i++) {
+			SPI_Read_Scale(i);
+            // TODO: add the uart transmit
+            
+		}
+	}
+
     __WFI();
   }
   /* USER CODE END 3 */
@@ -257,12 +294,12 @@ static void MX_SPI1_Init(void)
   /* SPI1 parameter configuration*/
   hspi1.Instance = SPI1;
   hspi1.Init.Mode = SPI_MODE_MASTER;
-  hspi1.Init.Direction = SPI_DIRECTION_1LINE;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
   hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -296,9 +333,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 0;
+  htim2.Init.Prescaler = 15999;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 4294967295;
+  htim2.Init.Period = 9;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -335,19 +372,35 @@ static void MX_GPIO_Init(void)
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, SPI1_CS_A_Pin|SPI1_CS_B_Pin, GPIO_PIN_SET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PC6 PC7 */
-  GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7;
+  /*Configure GPIO pins : SW1_Pin SW2_Pin */
+  GPIO_InitStruct.Pin = SW1_Pin|SW2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : SPI1_CS_A_Pin SPI1_CS_B_Pin PC6 PC7 */
+  GPIO_InitStruct.Pin = SPI1_CS_A_Pin|SPI1_CS_B_Pin|GPIO_PIN_6|GPIO_PIN_7;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI2_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI3_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -392,10 +445,53 @@ void Display_Value(float sensor_grams) {
     HAL_I2C_Master_Transmit_IT(&hi2c1, VK16K33_ADDR, i2c_tx, 11);
 }
 
+void SPI_Read_Scale(uint8_t idx) {
+	uint8_t tx[SPI_FRAME_SIZE] = {0};	// generate clock
+	uint8_t rx[SPI_FRAME_SIZE];
+
+	HAL_GPIO_WritePin(scale_cs[idx].port, scale_cs[idx].pin, GPIO_PIN_RESET);
+	HAL_StatusTypeDef status = HAL_SPI_TransmitReceive(&hspi1, tx, rx, SPI_FRAME_SIZE, 5);
+	HAL_GPIO_WritePin(scale_cs[idx].port, scale_cs[idx].pin, GPIO_PIN_SET);
+
+	// run checksum to validaete packet
+	uint8_t checksum = 0;
+	for (uint8_t i = 0; i < SPI_FRAME_SIZE; i++) {
+		checksum ^= rx[i];
+	}
+
+	// fallback if board is missing
+	if (status != HAL_OK || rx[0] != SPI_FRAME_SYNC || checksum != 0) {
+		scales[idx].valid = 0;
+		return;
+	}
+
+	scales[idx].seq        = rx[1];
+	scales[idx].mass       = (int16_t) ((rx[2] << 8) | rx[3]);
+	scales[idx].adc_raw    = (rx[4] << 8) | rx[5];
+	scales[idx].tare       = (rx[6] << 8) | rx[7];
+	scales[idx].flags      = rx[8];
+	scales[idx].valid      = 1;
+}
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+	if (htim->Instance != TIM2) return;
+
+	// only raise a flag, the SPI read happens in the main loop
+	poll_due = 1;
+
 	float sensor_grams = 152.4f;
 	Display_Value(sensor_grams);
+}
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+	// switch bounce just re-sets the same value, harmless
+	if (GPIO_Pin == SW1_Pin) {
+		active_scale = 0;
+	} else if (GPIO_Pin == SW2_Pin) {
+		active_scale = 1;
+	}
 }
 
 /* USER CODE END 4 */

@@ -52,6 +52,11 @@
 
 #define NSS_PORT GPIOA
 #define NSS_PIN  GPIO_PIN_4
+
+// protocol test: 1 = send known values instead of real adc readings
+#define SPI_TEST_PATTERN 1
+// which board this build is for in test mode: 0 = A, 1 = B
+#define SENSOR_ID 1
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -116,6 +121,15 @@ void PROCESS_ADC_BUFFER(uint16_t start, uint16_t end)
 	v_net_mv = ((int64_t) adc_net * VREF_MV) / ADC_MAX_MV;
 
 	mass = (uint16_t) (0.0356f * (float) v_net_mv) + (-5.4415f);
+
+#if SPI_TEST_PATTERN
+	// override with values that are easy to spot on the logic analyzer:
+	// adc/tare say which board answered, mass counts up to show fresh frames
+	static uint16_t test_ramp = 0;
+	adc_average = SENSOR_ID ? 0x0BBB : 0x0AAA;
+	tare_value  = SENSOR_ID ? 0x0B12 : 0x0A12;
+	mass        = test_ramp++;
+#endif
 }
 
 void SPI_RESYNC(void)
@@ -159,7 +173,6 @@ void SPI_UPDATE_FRAME(void)
 		return;
 	}
 
-	// resync frame on frame drop
 	if (HAL_SPI_GetState(&hspi1) != HAL_SPI_STATE_READY) {
 		SPI_RESYNC();
 	}
@@ -455,27 +468,22 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef * hadc) {
-	// process first half of adc buffer
 	PROCESS_ADC_BUFFER(0, BUFFER_SIZE / 2);
 	SPI_UPDATE_FRAME();
 }
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef * hadc) {
-	// process second half of adc buffer
 	PROCESS_ADC_BUFFER(BUFFER_SIZE / 2, BUFFER_SIZE);
 	SPI_UPDATE_FRAME();
 }
 
 void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef * hspi) {
-	// master read the whole frame: clear only the flags it actually received
 	spi_flags &= ~spi_frame[8];
 
-	// re-arm straight away so a back-to-back read never clocks out an empty DR
 	SPI_LOAD_FRAME();
 }
 
 void HAL_SPI_ErrorCallback(SPI_HandleTypeDef * hspi) {
-	// CS went high mid-frame: realign and re-arm
 	SPI_RESYNC();
 	SPI_LOAD_FRAME();
 }

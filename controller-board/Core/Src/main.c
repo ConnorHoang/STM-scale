@@ -36,6 +36,10 @@
 #define SCALE_COUNT      2
 #define SPI_FRAME_SIZE   10	
 #define SPI_FRAME_SYNC   0xA5
+
+// 0 while the display is unplugged: with no I2C pull-ups the bus reads busy
+// and every display write spins long enough to starve the main loop
+#define DISPLAY_CONNECTED 0
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -128,7 +132,7 @@ int main(void)
 
   /* MCU Configuration--------------------------------------------------------*/
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -142,7 +146,7 @@ int main(void)
 
   /* USER CODE END SysInit */
 
-  /* Initialize all configured peripherals */
+
   MX_GPIO_Init();
   MX_I2C1_Init();
   MX_SPI1_Init();
@@ -150,9 +154,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
   // Turn on system oscillator
   uint8_t osc_cmd = 0x21;
-  if (HAL_I2C_Master_Transmit(&hi2c1, VK16K33_ADDR, &osc_cmd, 1, 100) != HAL_OK) {
-      Error_Handler();
-  }
+  // display is optional: keep running so SPI works even if it isn't connected
+  HAL_I2C_Master_Transmit(&hi2c1, VK16K33_ADDR, &osc_cmd, 1, 100);
 
   // Turn on display
   uint8_t display_cmd = 0x81;
@@ -477,16 +480,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if (htim->Instance != TIM2) return;
 
-	// only raise a flag, the SPI read happens in the main loop
 	poll_due = 1;
 
+#if DISPLAY_CONNECTED
 	float sensor_grams = 152.4f;
 	Display_Value(sensor_grams);
+#endif
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-	// switch bounce just re-sets the same value, harmless
 	if (GPIO_Pin == SW1_Pin) {
 		active_scale = 0;
 	} else if (GPIO_Pin == SW2_Pin) {

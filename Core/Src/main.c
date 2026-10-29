@@ -44,6 +44,14 @@
 
 #define VREF_MV 5000UL
 #define ADC_MAX_MV 4096UL
+
+#define SPI_FRAME_SIZE 10
+#define SPI_FRAME_SYNC 0xA5
+
+#define SPI_FLAG_TARE 0x01	
+
+#define NSS_PORT GPIOA
+#define NSS_PIN  GPIO_PIN_4
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -51,6 +59,7 @@ ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
 SPI_HandleTypeDef hspi1;
+DMA_HandleTypeDef hdma_spi1_tx;
 
 TIM_HandleTypeDef htim2;
 
@@ -66,6 +75,10 @@ uint16_t mass;
 
 volatile uint8_t tare;
 uint16_t tare_value;
+
+uint8_t spi_frame[SPI_FRAME_SIZE];
+uint8_t spi_seq;
+uint8_t spi_flags;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -95,6 +108,7 @@ void PROCESS_ADC_BUFFER(uint16_t start, uint16_t end)
 	if (tare == 1) {
 		tare = 0;
 		tare_value = adc_average;
+		spi_flags |= SPI_FLAG_TARE;
 	}
 
 	adc_net = (int32_t) adc_average - (int32_t) tare_value;
@@ -102,6 +116,55 @@ void PROCESS_ADC_BUFFER(uint16_t start, uint16_t end)
 	v_net_mv = ((int64_t) adc_net * VREF_MV) / ADC_MAX_MV;
 
 	mass = (uint16_t) (0.0356f * (float) v_net_mv) + (-5.4415f);
+}
+
+void SPI_RESYNC(void)
+{
+	// align frames
+	HAL_DMA_Abort(&hdma_spi1_tx);
+	__HAL_RCC_SPI1_FORCE_RESET();
+	__HAL_RCC_SPI1_RELEASE_RESET();
+  
+	if (HAL_SPI_Init(&hspi1) != HAL_OK) {
+		Error_Handler();
+	}
+}
+
+void SPI_LOAD_FRAME(void)
+{
+	spi_frame[0] = SPI_FRAME_SYNC;		// fixed 0xA5 start bit
+	spi_frame[1] = spi_seq;				// sample counter
+	spi_frame[2] = mass >> 8;			// tared & calibrated weight first byte
+	spi_frame[3] = mass & 0xFF;			// tared &calibrated second byte
+	spi_frame[4] = adc_average >> 8;	// raw adc average 0-4095 1st byte
+	spi_frame[5] = adc_average & 0xFF;	// raw adc average 2nd byte
+	spi_frame[6] = tare_value >> 8;		// raw adc value captured at last tare 1st byte
+	spi_frame[7] = tare_value & 0xFF;	// raw adc value captured at last tare 2nd byte
+	spi_frame[8] = spi_flags;			// tare applied? this tells if the tare is applied in the current frame. Will be reset.
+
+	uint8_t checksum = 0;
+	for (uint8_t i = 0; i < SPI_FRAME_SIZE - 1; i++) {
+		checksum ^= spi_frame[i];
+	}
+	spi_frame[SPI_FRAME_SIZE - 1] = checksum; // error encoding bit for master to check integrity of packet. 
+
+	HAL_SPI_Transmit_DMA(&hspi1, spi_frame, SPI_FRAME_SIZE);
+}
+
+void SPI_UPDATE_FRAME(void)
+{
+	spi_seq++;
+
+	if (HAL_GPIO_ReadPin(NSS_PORT, NSS_PIN) == GPIO_PIN_RESET) {
+		return;
+	}
+
+	// resync frame on frame drop
+	if (HAL_SPI_GetState(&hspi1) != HAL_SPI_STATE_READY) {
+		SPI_RESYNC();
+	}
+
+	SPI_LOAD_FRAME();
 }
 /* USER CODE END 0 */
 
@@ -282,7 +345,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.NSS = SPI_NSS_HARD_INPUT;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -355,6 +418,9 @@ static void MX_DMA_Init(void)
   /* DMA2_Stream0_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
+  /* DMA2_Stream3_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream3_IRQn);
 
 }
 
@@ -375,21 +441,11 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
-
   /*Configure GPIO pin : PC13 */
   GPIO_InitStruct.Pin = GPIO_PIN_13;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PA4 */
-  GPIO_InitStruct.Pin = GPIO_PIN_4;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 2, 0);
@@ -401,11 +457,27 @@ static void MX_GPIO_Init(void)
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef * hadc) {
 	// process first half of adc buffer
 	PROCESS_ADC_BUFFER(0, BUFFER_SIZE / 2);
+	SPI_UPDATE_FRAME();
 }
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef * hadc) {
 	// process second half of adc buffer
 	PROCESS_ADC_BUFFER(BUFFER_SIZE / 2, BUFFER_SIZE);
+	SPI_UPDATE_FRAME();
+}
+
+void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef * hspi) {
+	// master read the whole frame: clear only the flags it actually received
+	spi_flags &= ~spi_frame[8];
+
+	// re-arm straight away so a back-to-back read never clocks out an empty DR
+	SPI_LOAD_FRAME();
+}
+
+void HAL_SPI_ErrorCallback(SPI_HandleTypeDef * hspi) {
+	// CS went high mid-frame: realign and re-arm
+	SPI_RESYNC();
+	SPI_LOAD_FRAME();
 }
 
 void EXTI15_10_IRQHandler(void) {

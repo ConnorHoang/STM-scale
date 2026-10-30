@@ -52,11 +52,6 @@
 
 #define NSS_PORT GPIOA
 #define NSS_PIN  GPIO_PIN_4
-
-// protocol test: 1 = send known values instead of real adc readings
-#define SPI_TEST_PATTERN 1
-// which board this build is for in test mode: 0 = A, 1 = B
-#define SENSOR_ID 1
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -121,15 +116,6 @@ void PROCESS_ADC_BUFFER(uint16_t start, uint16_t end)
 	v_net_mv = ((int64_t) adc_net * VREF_MV) / ADC_MAX_MV;
 
 	mass = (uint16_t) (0.0356f * (float) v_net_mv) + (-5.4415f);
-
-#if SPI_TEST_PATTERN
-	// override with values that are easy to spot on the logic analyzer:
-	// adc/tare say which board answered, mass counts up to show fresh frames
-	static uint16_t test_ramp = 0;
-	adc_average = SENSOR_ID ? 0x0BBB : 0x0AAA;
-	tare_value  = SENSOR_ID ? 0x0B12 : 0x0A12;
-	mass        = test_ramp++;
-#endif
 }
 
 void SPI_RESYNC(void)

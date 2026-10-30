@@ -60,8 +60,8 @@ all: main-build
 main-build: scale_adc.elf secondary-outputs
 
 # Tool invocations
-scale_adc.elf scale_adc.map: $(OBJS) $(USER_OBJS) /home/tanvu/STM32CubeIDE/embedded-software/scale_adc/STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "scale_adc.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"/home/tanvu/STM32CubeIDE/embedded-software/scale_adc/STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="scale_adc.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+scale_adc.elf scale_adc.map: $(OBJS) $(USER_OBJS) /home/arao/Documents/code/embedded/STM-scale/sensor-board/STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "scale_adc.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"/home/arao/Documents/code/embedded/STM-scale/sensor-board/STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="scale_adc.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

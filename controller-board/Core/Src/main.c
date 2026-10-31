@@ -121,6 +121,7 @@ static void MX_TIM3_Init(void);
 void Display_Value(float sensor_grams);
 void Display_Show_Scale_ID(uint8_t scale_num);
 void SPI_Read_Scale(uint8_t idx);
+void UART_Send_Scale(uint8_t idx);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -192,7 +193,7 @@ int main(void)
 		poll_due = 0;
 		for (uint8_t i = 0; i < SCALE_COUNT; i++) {
 			SPI_Read_Scale(i);
-            // TODO: add the uart transmit
+            UART_Send_Scale(i);
             
 		}
 	}
@@ -223,8 +224,8 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLM = 15;
-  RCC_OscInitStruct.PLL.PLLN = 216;
+  RCC_OscInitStruct.PLL.PLLM = 4;
+  RCC_OscInitStruct.PLL.PLLN = 180;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 2;
   RCC_OscInitStruct.PLL.PLLR = 2;
@@ -346,9 +347,9 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 15999;
+  htim2.Init.Prescaler = 8999;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 9;
+  htim2.Init.Period = 99;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -566,6 +567,25 @@ void SPI_Read_Scale(uint8_t idx) {
 	scales[idx].tare       = (rx[6] << 8) | rx[7];
 	scales[idx].flags      = rx[8];
 	scales[idx].valid      = 1;
+}
+
+void UART_Send_Scale(uint8_t idx)
+{
+	if (!(streams & (1u << idx))) return;   // switch off: don't send
+
+	char buf[32];
+	int n;
+	char id = 'A' + idx;
+
+	if (scales[idx].valid) {
+		n = snprintf(buf, sizeof buf, "%c,%d,%d,%d,%d,%d\r\n",
+		             id, scales[idx].seq, scales[idx].mass,
+		             scales[idx].adc_raw, scales[idx].tare, scales[idx].flags);
+	} else {
+		n = snprintf(buf, sizeof buf, "%c,ERR\r\n", id);
+	}
+
+	HAL_UART_Transmit(&huart1, (uint8_t *)buf, n, 10);
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)

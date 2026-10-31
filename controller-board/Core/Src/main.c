@@ -106,6 +106,7 @@ static const struct {
 
 volatile uint8_t active_scale = 0;		// state of the board shown [0 = a, 1 = b]
 volatile uint8_t poll_due = 0;			// set by TIM2 at 100 Hz
+volatile uint8_t streams = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -581,15 +582,25 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	uint16_t led;
+	uint8_t bit;
+
 	if (GPIO_Pin == GPIO_PIN_2) {
 		led = GPIO_PIN_6;
-		active_scale = 0;
-		Display_Show_Scale_ID(0);
+		bit = 0x01;
+
 	} else if (GPIO_Pin == GPIO_PIN_3) {
 		led = GPIO_PIN_7;
-		active_scale = 1;
-		Display_Show_Scale_ID(1);
+		bit = 0x02;
+	} else return;
+	if (HAL_GPIO_ReadPin(GPIOC, GPIO_Pin) == GPIO_PIN_RESET){
+		streams |= bit;
+		active_scale = bit >> 1;
+		Display_Show_Scale_ID(active_scale);
+	} else {
+		streams &= ~bit;
 	}
+
+	HAL_GPIO_WritePin(GPIOC, led, (streams & bit) ? GPIO_PIN_SET : GPIO_PIN_RESET);
 }
 
 /* USER CODE END 4 */

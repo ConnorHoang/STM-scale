@@ -58,7 +58,7 @@ SPI_HandleTypeDef hspi1;
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
-UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 static const uint8_t g_number_table[] = {
@@ -83,6 +83,7 @@ static const uint8_t g_number_table[] = {
 uint32_t display_timer = 0;
 
 static uint8_t i2c_tx[11];
+uint8_t ID_showing;
 
 // latest reading from each sensor board, written by SPI_Read_Scale()
 typedef struct {
@@ -115,8 +116,8 @@ static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM2_Init(void);
-static void MX_USART1_UART_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 void Display_Value(float sensor_grams);
 void Display_Show_Scale_ID(uint8_t scale_num);
@@ -161,11 +162,25 @@ int main(void)
   MX_I2C1_Init();
   MX_SPI1_Init();
   MX_TIM2_Init();
-  MX_USART1_UART_Init();
   MX_TIM3_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
+  uint8_t osc_cmd = 0x21;
+  if (HAL_I2C_Master_Transmit(&hi2c1, VK16K33_ADDR, &osc_cmd, 1, 100) != HAL_OK) {
+        Error_Handler();
+    }
+
+    // Turn on display
+    uint8_t display_cmd = 0x81;
+    HAL_I2C_Master_Transmit(&hi2c1, VK16K33_ADDR, &display_cmd, 1, 100);
+
+    // Set brightness to medium (0xEF for max, 0xE7 for mid)
+    uint8_t bright_cmd = 0xE7;
+    HAL_I2C_Master_Transmit(&hi2c1, VK16K33_ADDR, &bright_cmd, 1, 100);
+
   // Timer
   HAL_TIM_Base_Start_IT(&htim2);
+  HAL_TIM_Base_Start_IT(&htim3);
 //
 //  // 4. Test pattern: Show '8' on all 4 digits and turn colon on
 //  //    Register address: 0x00
@@ -419,35 +434,35 @@ static void MX_TIM3_Init(void)
 }
 
 /**
-  * @brief USART1 Initialization Function
+  * @brief USART2 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_USART1_UART_Init(void)
+static void MX_USART2_UART_Init(void)
 {
 
-  /* USER CODE BEGIN USART1_Init 0 */
+  /* USER CODE BEGIN USART2_Init 0 */
 
-  /* USER CODE END USART1_Init 0 */
+  /* USER CODE END USART2_Init 0 */
 
-  /* USER CODE BEGIN USART1_Init 1 */
+  /* USER CODE BEGIN USART2_Init 1 */
 
-  /* USER CODE END USART1_Init 1 */
-  huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
-  huart1.Init.WordLength = UART_WORDLENGTH_8B;
-  huart1.Init.StopBits = UART_STOPBITS_1;
-  huart1.Init.Parity = UART_PARITY_NONE;
-  huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart1) != HAL_OK)
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN USART1_Init 2 */
+  /* USER CODE BEGIN USART2_Init 2 */
 
-  /* USER CODE END USART1_Init 2 */
+  /* USER CODE END USART2_Init 2 */
 
 }
 
@@ -488,6 +503,14 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
+  /*Configure GPIO pins : PA9 PA10 */
+  GPIO_InitStruct.Pin = GPIO_PIN_9|GPIO_PIN_10;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI2_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI2_IRQn);
@@ -503,7 +526,9 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 void Display_Show_Scale_ID(uint8_t scale_num) {
     if (HAL_I2C_GetState(&hi2c1) != HAL_I2C_STATE_READY) return;
-    HAL_TIM_Base_Stop_IT(&htim3);
+//    HAL_TIM_Base_Stop_IT(&htim3);
+    ID_showing = 0;
+
 
     i2c_tx[0] = 0x00;
     i2c_tx[1] = 0x6D; i2c_tx[2] = 0x00; // 'S'
@@ -513,14 +538,17 @@ void Display_Show_Scale_ID(uint8_t scale_num) {
     i2c_tx[9] = g_number_table[scale_num % 10];        i2c_tx[10] = 0x00;
 
     HAL_I2C_Master_Transmit_IT(&hi2c1, VK16K33_ADDR, i2c_tx, 11);
-    HAL_TIM_Base_Start_IT(&htim3);
+//    HAL_TIM_Base_Start_IT(&htim3);
 
 }
 
 void Display_Value(float sensor_grams) {
     // Abort if I2C is still busy sending the last message
-    if (HAL_I2C_GetState(&hi2c1) != HAL_I2C_STATE_READY) return;
+	ID_showing = ID_showing + 1;
 
+    if ((HAL_I2C_GetState(&hi2c1) != HAL_I2C_STATE_READY) || ID_showing < 5 || streams == 0) return;
+
+    ID_showing = 60;
     int display_val = (int)(sensor_grams * 10.0f);
 
     if (display_val < 0) display_val = 0;
@@ -585,7 +613,7 @@ void UART_Send_Scale(uint8_t idx)
 		n = snprintf(buf, sizeof buf, "%c,ERR\r\n", id);
 	}
 
-	HAL_UART_Transmit(&huart1, (uint8_t *)buf, n, 10);
+	HAL_UART_Transmit(&huart2, (uint8_t *)buf, n, 10);
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
@@ -594,7 +622,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		poll_due = 1;
 	}
 	else if (htim->Instance == TIM3) {
-		Display_Value(scales[active_scale].mass);
+		if (streams & (1u << active_scale))
+		        Display_Value(scales[active_scale].mass);
+		else{
+			if (HAL_I2C_GetState(&hi2c1) != HAL_I2C_STATE_READY) return;
+			memset(i2c_tx, 0, sizeof i2c_tx);   // register 0x00, all segments off
+			HAL_I2C_Master_Transmit_IT(&hi2c1, VK16K33_ADDR, i2c_tx, sizeof i2c_tx);;
+		}
 	}
 
 }
@@ -612,12 +646,17 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 		led = GPIO_PIN_7;
 		bit = 0x02;
 	} else return;
+
 	if (HAL_GPIO_ReadPin(GPIOC, GPIO_Pin) == GPIO_PIN_RESET){
 		streams |= bit;
 		active_scale = bit >> 1;
 		Display_Show_Scale_ID(active_scale);
 	} else {
-		streams &= ~bit;
+	    streams &= ~bit;
+	    if (streams) {                       // other switch still on → show that board
+	        active_scale = (streams & 0x01) ? 0 : 1;
+	        Display_Show_Scale_ID(active_scale);
+	    }
 	}
 
 	HAL_GPIO_WritePin(GPIOC, led, (streams & bit) ? GPIO_PIN_SET : GPIO_PIN_RESET);

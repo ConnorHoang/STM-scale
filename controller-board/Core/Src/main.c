@@ -80,7 +80,8 @@ static const uint8_t g_number_table[] = {
 	0x71  /* F */
 };
 
-uint32_t display_timer = 0;
+volatile uint8_t id_display_requested = 0; // Flag set by EXTI
+volatile uint8_t display_update_due = 0;   // Flag set by TIM3
 
 static uint8_t i2c_tx[11];
 uint8_t ID_showing;
@@ -209,10 +210,25 @@ int main(void)
 		for (uint8_t i = 0; i < SCALE_COUNT; i++) {
 			SPI_Read_Scale(i);
             UART_Send_Scale(i);
-            
+		}
+		}
+	if (id_display_requested) {
+			id_display_requested = 0;
+			Display_Show_Scale_ID(active_scale);
+		}
+
+	if (display_update_due) {
+		display_update_due = 0;
+		// Safe to display val
+		if (streams & (1u << active_scale)) {
+			Display_Value(scales[active_scale].mass);
+		} else {
+			if (HAL_I2C_GetState(&hi2c1) == HAL_I2C_STATE_READY){
+				memset(i2c_tx, 0, 11);
+				HAL_I2C_Master_Transmit_IT(&hi2c1, VK16K33_ADDR, i2c_tx, 11);
+			}
 		}
 	}
-
     __WFI();
   }
   /* USER CODE END 3 */
@@ -622,15 +638,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		poll_due = 1;
 	}
 	else if (htim->Instance == TIM3) {
-		if (streams & (1u << active_scale))
-		        Display_Value(scales[active_scale].mass);
-		else{
-			if (HAL_I2C_GetState(&hi2c1) != HAL_I2C_STATE_READY) return;
-			memset(i2c_tx, 0, sizeof i2c_tx);   // register 0x00, all segments off
-			HAL_I2C_Master_Transmit_IT(&hi2c1, VK16K33_ADDR, i2c_tx, sizeof i2c_tx);;
-		}
+		display_update_due = 1;
 	}
-
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
@@ -650,12 +659,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	if (HAL_GPIO_ReadPin(GPIOC, GPIO_Pin) == GPIO_PIN_RESET){
 		streams |= bit;
 		active_scale = bit >> 1;
-		Display_Show_Scale_ID(active_scale);
+		id_display_requested = 1;
 	} else {
 	    streams &= ~bit;
 	    if (streams) {                       // other switch still on → show that board
 	        active_scale = (streams & 0x01) ? 0 : 1;
-	        Display_Show_Scale_ID(active_scale);
+	        id_display_requested = 1;
 	    }
 	}
 
@@ -690,7 +699,7 @@ void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
   /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+     ex: printf("Wrong parameters value: filema %s on line %d\r\n", file, line) */
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */

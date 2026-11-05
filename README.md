@@ -2,7 +2,7 @@
 Aaditya Rao, Antara Mazumdar, Connor Honag, Tan Vu
 
 ## Overview
-We created a system where a user can utilize a central control system and observe the masses of multiple scales on either a physical display or through a custom debug software. The user control is a central panel with a switch for each scale, with local tare buttons on each scale.
+We created a system where a user can utilize a central control system and observe the masses of multiple scales on either a physical display or through a custom debug software. The user switches the active scale on the central hub, one for each scale, along with dedicated, local tare buttons on the scale units themselves.
 
 We divided the workload for this project based on our learning goals and interests. Tan worked on data collection through the sensor board, using the ADC. Connor worked on the 7-segment display using I2C. Antara worked on the UART telemetry and display, as well as integrating the user input (switches). Aaditya worked on inter-board communication, using SPI to relay the measurements from both sensor boards to the controller board. 
 
@@ -155,4 +155,7 @@ We mostly used the Live Expressions tab of the STMCubeIDE to debug our code, ass
     - Read through my proposed architecture and provide feedback on key limitations or issues I would run into.
 - Antara - I used AI to -
     - Set up and debug the UART visualization in python
-    - Confirm that 
+    - Confirm that the variables in my code interfaced correctly when combing with other parts
+- Connor - I used AI to -
+    - Review some C syntax
+    - General reviews of code and identify flaws in my implementation to shore up

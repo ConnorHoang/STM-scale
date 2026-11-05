@@ -56,29 +56,29 @@ Cross board communication is implemented through SPI. The SPI link follows a mas
 
 #### SPI Function Call Stack
 **Sensor board**
-- TIM2 starts each ADC conversion.
-    - DMA2 writes the results into a circular 16-sample buffer.
-        - HAL_ADC_ConvHalfCpltCallback / HAL_ADC_ConvCpltCallback fire every 8 samples:
-            - PROCESS_ADC_BUFFER(): averages the samples, applies the tare, computes mass.
-            - SPI_UPDATE_FRAME():
-                - If CS is low, MISO is busy so it skips this update.
-                - If SPI is busy but CS is high, the last frame wasn’t read so it calls SPI_RESYNC(), which aborts the DMA and resets SPI1
-                - SPI_LOAD_FRAME(): packages the frame and calls HAL_SPI_Transmit_DMA() when CS is low
-- HAL_SPI_TxCpltCallback: sent when full frame was transmitted
+- `TIM2` starts each ADC conversion.
+    - `DMA2` writes the results into a circular 16-sample buffer.
+        - `HAL_ADC_ConvHalfCpltCallback` / `HAL_ADC_ConvCpltCallback` fire every 8 samples:
+            - `PROCESS_ADC_BUFFER()`: averages the samples, applies the tare, computes mass.
+            - `SPI_UPDATE_FRAME()`:
+                - If`CS`is low, MISO is busy so it skips this update.
+                - If `SPI` is busy but `CS` is high, the last frame wasn’t read so it calls `SPI_RESYNC()`, which aborts the DMA and resets `SPI1`
+                - `SPI_LOAD_FRAME()`: packages the frame and calls `HAL_SPI_Transmit_DMA()` when CS is low
+- `HAL_SPI_TxCpltCallback`: sent when full frame was transmitted
     - clears the flags that were sent,
-    - calls SPI_LOAD_FRAME() again so a frame is always ready.
-- HAL_SPI_ErrorCallback (CS went high mid-frame):
-    - SPI_RESYNC(), then SPI_LOAD_FRAME().
+    - calls `SPI_LOAD_FRAME()` again so a frame is always ready.
+- `HAL_SPI_ErrorCallback`: CS pulled high mid-frame:
+    - `SPI_RESYNC()`, then `SPI_LOAD_FRAME()`.
 
 **Controller board**
 - TIM2 interrupt (100 Hz):
-    - sets poll_due = 1. Polls sample.
+    - sets `poll_due = 1`. Polls sample.
 - Main loop, when poll_due is set:
-    - SPI_Read_Scale(0), then SPI_Read_Scale(1):
-        - pull that board’s CS low
-        - HAL_SPI_TransmitReceive() receives 10 frame bytes
-        - raise CS
-        - check the sync byte and checksum, then write scales[idx]. If the board is not connected or checksum false, set valid = 0.
+    - `SPI_Read_Scale(0)`, then `SPI_Read_Scale(1)`:
+        - pull that board’s `CS` low
+        - `HAL_SPI_TransmitReceive()` receives 10 frame bytes
+        - raise `CS`
+        - check the sync byte and checksum, then write `scales[idx]`. If the board is not connected or checksum `false`, set `valid = 0`.
 
 
 **Sensor Board Features**
@@ -159,3 +159,6 @@ We mostly used the Live Expressions tab of the STMCubeIDE to debug our code, ass
 - Connor - I used AI to -
     - Review some C syntax
     - General reviews of code and identify flaws in my implementation to shore up
+- Tan:
+    - No AI usage
+
